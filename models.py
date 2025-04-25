@@ -491,7 +491,7 @@ class DigitConvolutionalModel(Module):
 
 
     def run(self, x):
-        return self(x)
+        return self.forward(x)
  
     def forward(self, x):
         """
@@ -499,7 +499,8 @@ class DigitConvolutionalModel(Module):
         a regular 1-dimentional datapoint now, similar to the previous questions.
         """
         x = x.reshape(len(x), 28, 28)
-        x = stack(list(map(lambda sample: Convolve(sample, self.convolution_weights), x)))
+        x = stack([Convolve(sample, self.convolution_weights) for sample in x])
+        x = relu(x)  # Using relu from torch.nn.functional
         x = x.flatten(start_dim=1)
         """ YOUR CODE HERE """
         return self.fc(x)
@@ -520,8 +521,8 @@ class DigitConvolutionalModel(Module):
         """
         """ YOUR CODE HERE """
         prediction = self.forward(x)
-        return cross_entropy(prediction, torch.argmax(y, dim=1))
-     
+        loss = mse_loss(prediction, y)
+        return loss
         
 
     def train(self, dataset):
