@@ -284,12 +284,13 @@ class LanguageIDModel(Module):
         self.languages = ["English", "Spanish", "Finnish", "Dutch", "Polish"]
         super(LanguageIDModel, self).__init__()
         "*** YOUR CODE HERE ***"
-        self.hidden_size = 128
-        self.input_to_hidden = Linear(self.num_chars + self.hidden_size, self.hidden_size)
-        self.output_layer = Linear(self.hidden_size, len(self.languages))
-        self.forward = self.run
-        self.initial = Linear(self.num_chars, self.hidden_size)
+        self.num_classes = 5
+        self.hidden_dim = 256
 
+        self.input_proj = Linear(self.num_chars, self.hidden_dim, bias=True)
+        self.recurrent_proj = Linear(self.hidden_dim, self.hidden_dim, bias=True)
+        self.classifier = Linear(self.hidden_dim, self.num_classes)
+        self.dropout = torch.nn.Dropout(p=0.1)
 
 
     def run(self, xs):
@@ -322,15 +323,12 @@ class LanguageIDModel(Module):
                 (also called logits)
         """
         "*** YOUR CODE HERE ***"
-        batch_size = xs[0].shape[0]
-        h = relu(self.initial(xs[0]))  
-
-        for t in range(1, len(xs)):
-            char_input = xs[t]
-            combined = torch.cat([char_input, h], dim=1)
-            h = relu(self.input_to_hidden(combined))
-
-        return self.output_layer(h)
+        hidden = relu(self.input_proj(xs[0]))
+        for token in xs[1:]:
+            h = relu(self.input_proj(token) + self.recurrent_proj(h))
+        hidden = relu(hidden)  
+        hidden = self.dropout(hidden)
+        return self.classifier(hidden)
 
         
     
@@ -349,13 +347,9 @@ class LanguageIDModel(Module):
         Returns: a loss node
         """
         "*** YOUR CODE HERE ***"
-        try:
-            scores = self.run(xs)
-            target_indices = torch.argmax(y, dim=1)
-            return cross_entropy(scores, target_indices)
-        except Exception as e:
-            print("🔥 get_loss() error:", e)
-            raise
+        predictions = self.run(xs)
+        gold_indices = torch.argmax(y, dim=1)
+        return cross_entropy(predictions, gold_indices)
 
 
 
@@ -374,59 +368,34 @@ class LanguageIDModel(Module):
         For more information, look at the pytorch documentation of torch.movedim()
         """
         "*** YOUR CODE HERE ***"
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
-        batch_size = 32
-        num_epochs = 20
+        data_loader = DataLoader(dataset, batch_size=128, shuffle=True)
+        optimizer = optim.Adam(self.parameters(), lr=0.0007)
+        max_accuracy = 0.0
+        stagnation = 0
+        max_patience = 15
 
-        for epoch in range(num_epochs):
-            total_loss = 0
-            num_batches = 0
-            print(f"\n🔁 Epoch {epoch + 1} starting...")
+        for epoch in range(60):
+            for batch in data_loader:
+                words = movedim(batch["x"], 1, 0)
+                targets = batch["label"]
 
-            for start, end in dataset.train_buckets:
-                indices = torch.randperm(end - start) + start
+                loss = self.get_loss(words, targets)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-                for i in range(0, len(indices), batch_size):
-                    batch_indices = indices[i:i + batch_size]
-                    batch_words = [dataset.train_x[j] for j in batch_indices]
-                    batch_labels = [dataset.train_y[j] for j in batch_indices]
+            if hasattr(dataset, "get_validation_accuracy"):
+                val_acc = dataset.get_validation_accuracy()
+                print(f"Epoch {epoch + 1}: Validation Accuracy = {val_acc:.4f}")
 
-                    try:
-                        print("📦 Encoding batch...")
-                        xs, ys = dataset._encode(batch_words, batch_labels)
-
-                        print(f"📏 Original xs type: {type(xs)} | len(xs): {len(xs)}")
-                        print(f"🔬 First item type: {type(xs[0])} | shape: {getattr(xs[0], 'shape', 'No shape')}")
-
-                        xs = [torch.tensor(x, dtype=torch.float32) for x in xs]
-                        print(f"🧪 After tensor conversion: type(xs[0]): {type(xs[0])}, shape: {xs[0].shape}")
-
-                        xs = torch.stack(xs) 
-                        print(f"📐 Stacked xs shape: {xs.shape}")
-
-                        ys = torch.tensor(ys, dtype=torch.float32)
-                        print(f"🏷️ Labels shape: {ys.shape}")
-
-                        optimizer.zero_grad()
-                        loss = self.get_loss(xs, ys)
-                        print(f"📉 Loss: {loss.item()}")
-
-                        loss.backward()
-                        optimizer.step()
-
-                        total_loss += loss.item()
-                        num_batches += 1
-
-                    except Exception as e:
-                        print("🔥 Error during encoding or training:", e)
-                        import traceback
-                        traceback.print_exc()
-                        continue
-
-            if num_batches > 0:
-                print(f"✅ Epoch {epoch + 1}: Avg Loss = {total_loss / num_batches:.4f}")
-            else:
-                print(f"⚠️ Epoch {epoch + 1}: No batches ran successfully.")
+                if val_acc > max_accuracy:
+                    max_accuracy = val_acc
+                    stagnation = 0
+                else:
+                    stagnation += 1
+                if max_accuracy >= 0.84 or stagnation >= max_patience:
+                    break
+        
         
         
 
@@ -582,23 +551,14 @@ class Attention(Module):
 
         """YOUR CODE HERE"""
 
-        Q = self.q_layer(input)  # (B, T, C)
-        K = self.k_layer(input)  # (B, T, C)
-        V = self.v_layer(input)  # (B, T, C)
+        Q = self.q_layer(input)
+        K = self.k_layer(input)
+        V = self.v_layer(input)
         scores = torch.matmul(K, Q.transpose(-2, -1)) / (self.layer_size ** 0.5)
         scores = scores.masked_fill(self.mask[:, :, :T, :T] == 0, float('-inf'))
         weights = scores.softmax(dim=-1)
-        output = torch.matmul(weights, V)   # define output first
+        output = torch.matmul(weights, V) 
         output0 = output[0]
-        expected = (scores[0].softmax(dim=-1) @ V[0])
-        print("Q:", Q[0, :2])  # First 2 tokens of the first batch
-        print("K:", K[0, :2])
-        print("V:", V[0, :2])
-        print("Scores:", scores[0, :2, :2])
-        print("Weights:", weights[0, :2, :2])
-        print("Output:", output[0, :2])
-        print("Diff:", torch.abs(output - expected).max())
-        print("Close enough?", torch.allclose(output, expected, atol=1e-4, rtol=1e-4))
         return output0
 
 
