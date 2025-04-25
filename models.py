@@ -17,7 +17,7 @@ from torch import movedim
 
 class PerceptronModel(Module):
     def __init__(self, dimensions):
-        """
+        """"
         Initialize a new Perceptron instance.
 
         A perceptron classifies data points as either belonging to a particular
@@ -38,6 +38,7 @@ class PerceptronModel(Module):
         super(PerceptronModel, self).__init__()
         
         "*** YOUR CODE HERE ***"
+        self.w = Parameter(torch.ones((1, dimensions)))
         
 
     def get_weights(self):
@@ -57,6 +58,7 @@ class PerceptronModel(Module):
         The pytorch function `tensordot` may be helpful here.
         """
         "*** YOUR CODE HERE ***"
+        return torch.tensordot(self.w, x, dims=([1], [1]))
         
 
     def get_prediction(self, x):
@@ -66,6 +68,8 @@ class PerceptronModel(Module):
         Returns: 1 or -1
         """
         "*** YOUR CODE HERE ***"
+        score = self.run(x)
+        return 1 if score.item() >= 0 else -1
 
 
 
@@ -81,6 +85,16 @@ class PerceptronModel(Module):
         with no_grad():
             dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
             "*** YOUR CODE HERE ***"
+            all_correct = False
+            while not all_correct:
+                all_correct = True
+                for batch in dataloader:
+                    x = batch['x']
+                    y = batch['label'].item()
+                    prediction = self.get_prediction(x)
+                    if prediction != y:
+                        self.w += y * x
+                        all_correct = False
 
 
 
@@ -94,7 +108,9 @@ class RegressionModel(Module):
         # Initialize your model parameters here
         "*** YOUR CODE HERE ***"
         super().__init__()
-
+        self.linear1 = Linear(1, 64)
+        self.linear2 = Linear(64, 64)
+        self.linear3 = Linear(64, 1)
 
 
     def forward(self, x):
@@ -107,6 +123,9 @@ class RegressionModel(Module):
             A node with shape (batch_size x 1) containing predicted y-values
         """
         "*** YOUR CODE HERE ***"
+        x = relu(self.linear1(x))
+        x = relu(self.linear2(x))
+        return self.linear3(x)
 
     
     def get_loss(self, x, y):
@@ -120,7 +139,9 @@ class RegressionModel(Module):
         Returns: a tensor of size 1 containing the loss
         """
         "*** YOUR CODE HERE ***"
- 
+        prediction = self.forward(x)
+        loss = mse_loss(prediction, y)
+        return loss
         
 
     def train(self, dataset):
@@ -138,7 +159,17 @@ class RegressionModel(Module):
             
         """
         "*** YOUR CODE HERE ***"
+        dataloader = DataLoader(dataset, batch_size=10, shuffle=True)
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
 
+        for epoch in range(100):
+            for batch in dataloader:
+                x = batch['x']
+                y = batch['label']
+                optimizer.zero_grad()
+                loss = self.get_loss(x, y)
+                loss.backward()
+                optimizer.step()
             
 
 
@@ -167,6 +198,9 @@ class DigitClassificationModel(Module):
         input_size = 28 * 28
         output_size = 10
         "*** YOUR CODE HERE ***"
+        self.fc1 = Linear(784, 128)
+        self.fc2 = Linear(128, 64)
+        self.fc3 = Linear(64, 10)
 
 
 
@@ -186,6 +220,9 @@ class DigitClassificationModel(Module):
                 (also called logits)
         """
         """ YOUR CODE HERE """
+        x = relu(self.fc1(x))
+        x = relu(self.fc2(x))
+        return self.fc3(x)
 
  
 
@@ -203,7 +240,9 @@ class DigitClassificationModel(Module):
         Returns: a loss tensor
         """
         """ YOUR CODE HERE """
-
+        prediction = self.forward(x)
+        loss = mse_loss(prediction, y)
+        return loss
     
         
 
@@ -212,6 +251,19 @@ class DigitClassificationModel(Module):
         Trains the model.
         """
         """ YOUR CODE HERE """
+        dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+
+        for epoch in range(10):
+            for batch in dataloader:
+                x = batch['x']
+                y = batch['label']
+                optimizer.zero_grad()
+                loss = self.get_loss(x, y)
+                loss.backward()
+                optimizer.step()
+
+    forward = run
 
 
 
@@ -232,6 +284,12 @@ class LanguageIDModel(Module):
         self.languages = ["English", "Spanish", "Finnish", "Dutch", "Polish"]
         super(LanguageIDModel, self).__init__()
         "*** YOUR CODE HERE ***"
+        self.hidden_size = 128
+        self.input_to_hidden = Linear(self.num_chars + self.hidden_size, self.hidden_size)
+        self.output_layer = Linear(self.hidden_size, len(self.languages))
+        self.forward = self.run
+        self.initial = Linear(self.num_chars, self.hidden_size)
+
 
 
     def run(self, xs):
@@ -264,7 +322,17 @@ class LanguageIDModel(Module):
                 (also called logits)
         """
         "*** YOUR CODE HERE ***"
+        batch_size = xs[0].shape[0]
+        h = relu(self.initial(xs[0]))  # First char
 
+        for t in range(1, len(xs)):
+            char_input = xs[t]
+            combined = torch.cat([char_input, h], dim=1)
+            h = relu(self.input_to_hidden(combined))
+
+        return self.output_layer(h)
+
+        
     
     def get_loss(self, xs, y):
         """
@@ -281,7 +349,15 @@ class LanguageIDModel(Module):
         Returns: a loss node
         """
         "*** YOUR CODE HERE ***"
-        
+        try:
+            scores = self.run(xs)
+            target_indices = torch.argmax(y, dim=1)
+            return cross_entropy(scores, target_indices)
+        except Exception as e:
+            print("🔥 get_loss() error:", e)
+            raise
+
+
 
     def train(self, dataset):
         """
@@ -293,12 +369,65 @@ class LanguageIDModel(Module):
         that you need to switch the first two dimensions of every batch. This can be done with the movedim() function 
         as follows:
 
-        movedim(input_vector, initial_dimension_position, final_dimension_position)
+        movedim(input_vector, xinitial_dimension_position, final_dimension_position)
 
         For more information, look at the pytorch documentation of torch.movedim()
         """
         "*** YOUR CODE HERE ***"
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+        batch_size = 32
+        num_epochs = 20
 
+        for epoch in range(num_epochs):
+            total_loss = 0
+            num_batches = 0
+            print(f"\n🔁 Epoch {epoch + 1} starting...")
+
+            for start, end in dataset.train_buckets:
+                indices = torch.randperm(end - start) + start
+
+                for i in range(0, len(indices), batch_size):
+                    batch_indices = indices[i:i + batch_size]
+                    batch_words = [dataset.train_x[j] for j in batch_indices]
+                    batch_labels = [dataset.train_y[j] for j in batch_indices]
+
+                    try:
+                        print("📦 Encoding batch...")
+                        xs, ys = dataset._encode(batch_words, batch_labels)
+
+                        print(f"📏 Original xs type: {type(xs)} | len(xs): {len(xs)}")
+                        print(f"🔬 First item type: {type(xs[0])} | shape: {getattr(xs[0], 'shape', 'No shape')}")
+
+                        xs = [torch.tensor(x, dtype=torch.float32) for x in xs]
+                        print(f"🧪 After tensor conversion: type(xs[0]): {type(xs[0])}, shape: {xs[0].shape}")
+
+                        xs = torch.stack(xs)  # (L x B x C)
+                        print(f"📐 Stacked xs shape: {xs.shape}")
+
+                        ys = torch.tensor(ys, dtype=torch.float32)
+                        print(f"🏷️ Labels shape: {ys.shape}")
+
+                        optimizer.zero_grad()
+                        loss = self.get_loss(xs, ys)
+                        print(f"📉 Loss: {loss.item()}")
+
+                        loss.backward()
+                        optimizer.step()
+
+                        total_loss += loss.item()
+                        num_batches += 1
+
+                    except Exception as e:
+                        print("🔥 Error during encoding or training:", e)
+                        import traceback
+                        traceback.print_exc()
+                        continue
+
+            if num_batches > 0:
+                print(f"✅ Epoch {epoch + 1}: Avg Loss = {total_loss / num_batches:.4f}")
+            else:
+                print(f"⚠️ Epoch {epoch + 1}: No batches ran successfully.")
+        
         
 
 def Convolve(input: tensor, weight: tensor):
@@ -318,8 +447,19 @@ def Convolve(input: tensor, weight: tensor):
     weight_dimensions = weight.shape
     Output_Tensor = tensor(())
     "*** YOUR CODE HERE ***"
+    output_height = input.shape[0] - weight.shape[0] + 1
+    output_width = input.shape[1] - weight.shape[1] + 1
+    output = []
 
-    
+    for y in range(output_height):
+        row = []
+        for x in range(output_width):
+            region = input[y:y+weight.shape[0], x:x+weight.shape[1]]
+            conv_value = torch.sum(region * weight)
+            row.append(conv_value)
+        output.append(torch.stack(row))
+
+    Output_Tensor = torch.stack(output)
     "*** End Code ***"
     return Output_Tensor
 
@@ -345,6 +485,7 @@ class DigitConvolutionalModel(Module):
 
         self.convolution_weights = Parameter(ones((3, 3)))
         """ YOUR CODE HERE """
+        self.fc = Linear(676, 10)
 
 
 
@@ -361,6 +502,7 @@ class DigitConvolutionalModel(Module):
         x = stack(list(map(lambda sample: Convolve(sample, self.convolution_weights), x)))
         x = x.flatten(start_dim=1)
         """ YOUR CODE HERE """
+        return self.fc(x)
 
 
     def get_loss(self, x, y):
@@ -377,7 +519,8 @@ class DigitConvolutionalModel(Module):
         Returns: a loss tensor
         """
         """ YOUR CODE HERE """
-
+        prediction = self.forward(x)
+        return cross_entropy(prediction, torch.argmax(y, dim=1))
      
         
 
@@ -386,6 +529,17 @@ class DigitConvolutionalModel(Module):
         Trains the model.
         """
         """ YOUR CODE HERE """
+        dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+        optimizer = optim.Adam(self.parameters(), lr=0.001)
+
+        for epoch in range(10):
+            for batch in dataloader:
+                x = batch['x']
+                y = batch['label']
+                optimizer.zero_grad()
+                loss = self.get_loss(x, y)
+                loss.backward()
+                optimizer.step()
 
 
 
