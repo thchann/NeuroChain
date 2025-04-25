@@ -323,7 +323,7 @@ class LanguageIDModel(Module):
         """
         "*** YOUR CODE HERE ***"
         batch_size = xs[0].shape[0]
-        h = relu(self.initial(xs[0]))  # First char
+        h = relu(self.initial(xs[0]))  
 
         for t in range(1, len(xs)):
             char_input = xs[t]
@@ -401,7 +401,7 @@ class LanguageIDModel(Module):
                         xs = [torch.tensor(x, dtype=torch.float32) for x in xs]
                         print(f"🧪 After tensor conversion: type(xs[0]): {type(xs[0])}, shape: {xs[0].shape}")
 
-                        xs = torch.stack(xs)  # (L x B x C)
+                        xs = torch.stack(xs) 
                         print(f"📐 Stacked xs shape: {xs.shape}")
 
                         ys = torch.tensor(ys, dtype=torch.float32)
@@ -500,7 +500,7 @@ class DigitConvolutionalModel(Module):
         """
         x = x.reshape(len(x), 28, 28)
         x = stack([Convolve(sample, self.convolution_weights) for sample in x])
-        x = relu(x)  # Using relu from torch.nn.functional
+        x = relu(x) 
         x = x.flatten(start_dim=1)
         """ YOUR CODE HERE """
         return self.fc(x)
@@ -553,11 +553,12 @@ class Attention(Module):
         In order to pass the autograder, make sure each linear layer matches up with their corresponding matrix,
         ie: use self.k_layer to generate the K matrix.
         """
-        self.k_layer = Linear(layer_size, layer_size)
-        self.q_layer = Linear(layer_size, layer_size)
-        self.v_layer = Linear(layer_size,layer_size)
+        self.k_layer = Linear(layer_size, layer_size, bias=False)
+        self.q_layer = Linear(layer_size, layer_size, bias=False)
+        self.v_layer = Linear(layer_size, layer_size, bias=False)
 
         #Masking part of attention layer
+
         self.register_buffer("mask", torch.tril(torch.ones(block_size, block_size))
                                      .view(1, 1, block_size, block_size))
        
@@ -580,5 +581,25 @@ class Attention(Module):
         B, T, C = input.size()
 
         """YOUR CODE HERE"""
+
+        Q = self.q_layer(input)  # (B, T, C)
+        K = self.k_layer(input)  # (B, T, C)
+        V = self.v_layer(input)  # (B, T, C)
+        scores = torch.matmul(K, Q.transpose(-2, -1)) / (self.layer_size ** 0.5)
+        scores = scores.masked_fill(self.mask[:, :, :T, :T] == 0, float('-inf'))
+        weights = scores.softmax(dim=-1)
+        output = torch.matmul(weights, V)   # define output first
+        output0 = output[0]
+        expected = (scores[0].softmax(dim=-1) @ V[0])
+        print("Q:", Q[0, :2])  # First 2 tokens of the first batch
+        print("K:", K[0, :2])
+        print("V:", V[0, :2])
+        print("Scores:", scores[0, :2, :2])
+        print("Weights:", weights[0, :2, :2])
+        print("Output:", output[0, :2])
+        print("Diff:", torch.abs(output - expected).max())
+        print("Close enough?", torch.allclose(output, expected, atol=1e-4, rtol=1e-4))
+        return output0
+
 
      
