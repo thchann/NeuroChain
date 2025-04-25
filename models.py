@@ -325,7 +325,7 @@ class LanguageIDModel(Module):
         "*** YOUR CODE HERE ***"
         hidden = relu(self.input_proj(xs[0]))
         for token in xs[1:]:
-            h = relu(self.input_proj(token) + self.recurrent_proj(h))
+            hidden = relu(self.input_proj(token) + self.recurrent_proj(hidden))
         hidden = relu(hidden)  
         hidden = self.dropout(hidden)
         return self.classifier(hidden)
