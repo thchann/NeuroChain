@@ -1,4 +1,4 @@
-# Core2GPT  
+# NeuroChain  
 *A learning journey from perceptrons to GPT-style transformers*  
 
 ## 📌 Overview  
